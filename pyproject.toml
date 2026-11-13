@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rdt-gauge-bench"
+version = "0.1.0"
+description = "锐力德 RDT-TVK 测力计台架测试脚本：通信、采集、波形、设置（不接 DH，不依赖 R11/R2）"
+requires-python = ">=3.13,<3.14"
+# 版本和 r11_upper_computer/pyproject.toml 一致。rdt_gauge 自己的代码不用 numpy；pyqtgraph 要它，所以放在 gui 里。
+dependencies = ["pyserial==3.5"]
+
+[project.optional-dependencies]
+gui = ["numpy==2.5.0", "PyQt6==6.11.0", "pyqtgraph==0.14.0"]
+test = ["pytest==9.1.1"]
+
+[project.scripts]
+rdt-gauge = "rdt_gauge.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["rdt_gauge*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-ra"
+
+[tool.importlinter]
+root_package = "rdt_gauge"
+
+[[tool.importlinter.contracts]]
+name = "Layers: lower layers never import higher ones"
+type = "layers"
+# 从上到下。"|" 隔开的同层模块互相也不能导入（写法同 R11 pyproject.toml）。
+# tests/test_layers.py 读这张表离线复查，没装 import-linter 也能检查。
+layers = [
+    "rdt_gauge.cli",
+    "rdt_gauge.live_plot | rdt_gauge.raw_console",
+    "rdt_gauge.capture | rdt_gauge.settings_ops",
+    "rdt_gauge.ports | rdt_gauge.storage",
+    "rdt_gauge.protocol | rdt_gauge.registers",
+    "rdt_gauge.contracts",
+]

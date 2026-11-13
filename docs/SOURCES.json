@@ -1,0 +1,131 @@
+{
+  "batch": "2026-11-13-rdt-gauge-bench",
+  "hardware_verified": false,
+  "kind": "rewritten_after",
+  "note": "rdt_gauge 没有逐字复制 R11/R2 的文件，也不在运行时导入它们：下面每一项是照着来源写的思路和规则，按锐力德 RDT-TVK 协议改写。source_sha256 是写这些代码时读到的来源文件，用来核对来源以后有没有变。",
+  "donor_root": "wuji-dh-ui 协作仓库 main 分支，2026-11-12 下载的 zip 快照（zip 不带提交号，所以按文件 SHA-256 登记）",
+  "modules": [
+    {
+      "source": "r11_upper_computer/wuji_r11/acquisition/protocols/force_sensor.py",
+      "source_sha256": "ac2cc05f0495a9dcefc0255b16b9a74275711df98555f9033f4ae5e716e85e51",
+      "destination": ["rdt_gauge/protocol.py", "rdt_gauge/registers.py", "rdt_gauge/ports.py", "rdt_gauge/raw_console.py"],
+      "items": ["crc16", "add_crc", "validate_crc", "read_registers 的逐项校验、异常帧、重试前清缓冲、不调用 flush()", "打开串口后等 1 s", "last_frame", "UNIT_CODES、寄存器 8 取小数位"],
+      "adaptation": "32 位固定高字在前（锐力德协议没有寄存器 10）；负数按协议写的标准补码；超时按波特率算；写命令只发一次、不重试，改通信参数时回显允许收不到；读写分开成 build/parse 纯函数便于用说明书报文测试。"
+    },
+    {
+      "source": "r11_upper_computer/tools/gauge_probe.py",
+      "source_sha256": "83362861636abee91c0dfd15dd30bd17ed1a585e6eb4507e8423a3a92642c32a",
+      "destination": ["rdt_gauge/protocol.py", "rdt_gauge/registers.py", "rdt_gauge/settings_ops.py", "rdt_gauge/capture.py", "rdt_gauge/raw_console.py"],
+      "items": ["write_register（0x10、回显前 6 字节一致、0x90 被拒）", "WRITABLE / LIMITS 白名单和取值范围", "文件开头的永远不碰清单", "read_all 分块读", "hold：动手前原值先落盘", "restore：写回后读回核对", "一次读 30–45 同时拿测量值和 AD 内码"],
+      "adaptation": "白名单换成锐力德的 13 个寄存器（跟踪、清零、滤波、AD 速度、拉压、应答延时、通信参数），通信参数只能走 change_link；永远不写 7、36–43、46–49、60–66、84–85、94、290；没有整机锁和 R11 设置文件。"
+    },
+    {
+      "source": "r11_upper_computer/wuji_r11/acquisition/protocols/cybsq_v5.py",
+      "source_sha256": "1721b5a79f2560b703e5b2c344edecfbbda3259f32f02a689940d18126dcea86",
+      "destination": ["rdt_gauge/registers.py", "rdt_gauge/settings_ops.py"],
+      "items": ["CONFIG_NAMES：给寄存器起名字", "MUST_BE_OFF：会改读数、必须为 0 的寄存器"],
+      "adaptation": "锐力德对应 93、95、96、98、102；R11 是不为 0 就拒绝开始，台架上改成警告（可能要故意打开做对照）。"
+    },
+    {
+      "source": "r11_upper_computer/tools/cybsq_configure.py",
+      "source_sha256": "da51467b0cccd07ad26ba2ac318937d832242a6037c36ca034182a7554448d6f",
+      "destination": ["rdt_gauge/settings_ops.py", "rdt_gauge/protocol.py", "rdt_gauge/cli.py"],
+      "items": ["configure：先只读、读不全不写、只改有差异的、不加 --apply 只列计划、写完读回、finally 里一定恢复保护、全部再读核对", "set_baud / finish：改波特率回显可选，新参数下读回确认", "reply_optional", "--apply 开关"],
+      "adaptation": "锐力德的锁是寄存器 5（0x5AA5 解锁），协议说只管通信参数，所以普通设置默认不解锁、被拒时提示 --unlock；改通信参数在同一次运行里切换并读回，读不回就换回旧参数试，两边都不通给出说明书的恢复办法（按住按键上电 3 秒）。"
+    },
+    {
+      "source": "r11_upper_computer/wuji_r11/acquisition/force.py",
+      "source_sha256": "f9418cd1e91c70c54f69e2db790a545ac9e45b63d57d2bcb73ed7203942974ec",
+      "destination": ["rdt_gauge/capture.py"],
+      "items": ["ForceSource.records：每行的字段、失败照常记录接着读、连续 3 次失败才停", "newtons_from 单位换算", "_next_poll_deadline / _wait_until：固定周期读，读晚了不补", "_INTER_FRAME_GAP_S"],
+      "adaptation": "读失败后清接收缓冲（迟到字节会和下一次回复错位）；帧间隔按波特率算 3.5 个字符、最少 1.75 ms，两种节拍都留；单位来自寄存器 104。"
+    },
+    {
+      "source": "r11_upper_computer/wuji_r11/acquisition/capture.py",
+      "source_sha256": "9c719a01e69afbe1eaddab298690ef7b2b73fca7a35fad6819a14b5779636282",
+      "destination": ["rdt_gauge/capture.py", "rdt_gauge/live_plot.py"],
+      "items": ["CaptureSession：一个读取线程拥有串口、写盘交给单写者、预览缓冲有上限且取锁失败就跳过、metadata.json / summary.json", "read_preview(after) 和 gap"],
+      "adaptation": "没有测力分发（feed）和学习检查点；统计边读边累计（CaptureStats）。"
+    },
+    {
+      "source": "r11_upper_computer/wuji_r11/storage/raw_writer.py",
+      "source_sha256": "08e5fca2988aec550e1bfc38a955a6fca6f7705b0021ef397319ab18f902434c",
+      "destination": ["rdt_gauge/storage.py"],
+      "items": ["CsvOutput：单写者、有界队列、调用方不等磁盘、队列满记成错误不悄悄丢、每 0.5 s flush、x 模式、utf-8-sig"],
+      "adaptation": "用标准库 queue.Queue，没有 R11 的生产者准入锁和检查点票据（只有一个生产者，不需要学习围栏）；正常关闭时 fsync 一次。"
+    },
+    {
+      "source": "r11_upper_computer/wuji_r11/storage/atomic.py",
+      "source_sha256": "020a01323edf0db17c382a8076e0b4d5f245aed701c710337cfb960f81bfca62",
+      "destination": ["rdt_gauge/storage.py"],
+      "items": ["write_json：临时文件 + fsync + os.replace，allow_nan=False"],
+      "adaptation": "同样做法。"
+    },
+    {
+      "source": "r11_upper_computer/wuji_r11/acquisition/protocols/transport.py",
+      "source_sha256": "ba5bde25e28480bef2f0b331f381b01c1732430e7f39956e645e8f2234993241",
+      "destination": ["rdt_gauge/ports.py"],
+      "items": ["enumerate_ports：列串口不打开", "resolve_cdc_port：按 USB 身份认设备、多个匹配报错不猜、留下证据"],
+      "adaptation": "只按序列号匹配（加可选的 COM 号核对）；没有 description_hint。"
+    },
+    {
+      "source": "r11_upper_computer/wuji_r11/configuration.py",
+      "source_sha256": "26f50559696d2d5f6cdce10c793ab5959d0bd4496e762b7e1814156311873d62",
+      "destination": ["rdt_gauge/ports.py"],
+      "items": ["FTDI_VID = 0x0403；只有一个 FTDI 串口时可以直接用，多个不猜"],
+      "adaptation": "同样做法。"
+    },
+    {
+      "source": "r11_upper_computer/wuji_r11/contracts.py",
+      "source_sha256": "36be5aa1870ff9370f036b98f41a6393baac3cf377201246c0b0c484943a3a84",
+      "destination": ["rdt_gauge/contracts.py"],
+      "items": ["跨模块共享的事实类型不带 I/O，用冻结的数据类"],
+      "adaptation": "类型换成台架测试用的（LinkSettings、RegisterSpec、StatusBits、SampleRow、WriteReceipt、CaptureStats）。"
+    },
+    {
+      "source": "r11_upper_computer/tools/cybsq_probe.py",
+      "source_sha256": "c94545ca1748b0b88161060f58b8b2a0849ad926af2f9674c1660895f79e6d67",
+      "destination": ["rdt_gauge/storage.py", "rdt_gauge/capture.py", "rdt_gauge/ports.py", "rdt_gauge/cli.py"],
+      "items": ["out_dir：带日期的输出目录", "summarize：往返、间隔、读数变化间隔、均值、标准差", "只发 03 的只读检查", "文件开头的用法说明"],
+      "adaptation": "输出写到仓库外（%USERPROFILE%\\RDT_TestData，可用 RDT_BENCH_DATA 改），每次一个新目录、重名加序号。"
+    },
+    {
+      "source": "r11_upper_computer/docs/changes/2026-11-04.md",
+      "source_sha256": "ff6aa9794021dd8738fbaf85a562e376d5c89961eebd0e3c224ab53d10de8762",
+      "destination": ["rdt_gauge/ports.py"],
+      "items": ["CYBSQ-V5 第一次上电出厂不是说明书写的 9600，靠只发 03 的扫描找到 256000、地址 1"],
+      "adaptation": "scan：出厂 9600 优先，停止位 2 和 1 都试，只读固件版本，绝不写。"
+    },
+    {
+      "source": "r11_upper_computer/wuji_r11/gui/live_plot.py",
+      "source_sha256": "41c02d2256f3ed4f6a44c3c43ebde1c3b3c07bd908d52b82afb78d57716dcf6d",
+      "destination": ["rdt_gauge/live_plot.py"],
+      "items": ["pyqtgraph 画实时曲线、只留最近一段、完整数据以文件为准"],
+      "adaptation": "QTimer 定时取预览拷贝，界面线程不碰串口；数据整理（PlotBuffer）不依赖 Qt，单独测试。"
+    },
+    {
+      "source": "r11_upper_computer/pyproject.toml",
+      "source_sha256": "c324f0735df81d7e663d64c5e094ff3d67b06157e5d84104838575c109b0e637",
+      "destination": ["pyproject.toml", "tests/test_layers.py"],
+      "items": ["依赖版本（pyserial 3.5、numpy 2.5.0、PyQt6 6.11.0、pyqtgraph 0.14.0、pytest 9.1.1）", "Import Linter 分层合同的写法"],
+      "adaptation": "rdt_gauge 自己不用 numpy，放进 gui 可选依赖；分层表由 tests/test_layers.py 离线复查，不装 import-linter 也能检查。"
+    },
+    {
+      "source": "r2_five_station/tests/offline_guard/sitecustomize.py",
+      "source_sha256": "bf037202939716cfa93b200961cb989ee9ea89175d661a62122fd725cc1ceeac",
+      "destination": ["tests/offline_guard/sitecustomize.py", "tests/conftest.py"],
+      "items": ["离线测试时把 serial.Serial 换成直接报错，子进程通过 PYTHONPATH 和环境变量继承"],
+      "adaptation": "环境变量叫 RDT_BENCH_OFFLINE_ONLY；另外锁住列出串口（comports）；本进程里由 conftest.py 在导入 rdt_gauge 之前调用。"
+    },
+    {
+      "source": "r2_five_station/tools/check_environment.ps1",
+      "source_sha256": "b7267aa24e67f983a6198a9eef7878e273f58c6da3f52de04a111a7d2a3e69ea",
+      "destination": ["rdt_gauge/ports.py"],
+      "items": ["Get-FtdiPorts：只读注册表看 FTDI 延迟计时器"],
+      "adaptation": "用 Python winreg 读同一个位置；只报告，不改。"
+    }
+  ],
+  "test_basis": "tests/ 只用说明书里的报文和测试里写好的固定字节（tests/frames.py 拼、tests/scripted_port.py 按顺序给），不做模拟测力计；采集循环的时序、波特率切换、图形窗口要实机验证。",
+  "manual_sources": ["锐力德 Modbus RTU 协议", "锐力德 Modbus RTU 指令解析", "锐力德 Modbus RTU 通讯举例", "RDT-TVK 变送器说明书 V2.5", "RDF-TC10B 拉压力传感器手册"],
+  "manual_sources_note": "厂家资料不放进仓库（能不能放要问维护者）；代码注释和测试里引用的是章节号。"
+}

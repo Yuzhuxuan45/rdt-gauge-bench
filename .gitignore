@@ -1,0 +1,15 @@
+# 环境与缓存
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+build/
+dist/
+
+# 数据、备份、本机设置不进 git（默认也写在仓库外，这里兜底）
+runs/
+backups/
+data/
+local_settings*.json
+*.csv
